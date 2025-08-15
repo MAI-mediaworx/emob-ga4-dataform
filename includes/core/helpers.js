@@ -1,22 +1,12 @@
 /*
-	This file is part of "GA4 Dataform Package".
-	Copyright (C) 2023-2024 Superform Labs <support@ga4dataform.com>
-	Artem Korneev, Jules Stuifbergen,
-	Johan van de Werken, Krisztián Korpa,
-	Simon Breton
+This file inlcudes for helper functions, After each function is defined in the section below, include it in the module.export section below 
 
-	This program is free software: you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation, version 3 of the License.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License in the LICENSE.txt file for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program.  If not, see <https://www.gnu.org/licenses/>.
+This file helps to:
+1. Centralize and manage configurations.
+2. Automate repetitive SQL coding tasks.
+3. Streamline data transformation workflows, especially for nested or event-based data structures common in web analytics (like GA4).
 */
+
 
 /**
  * Returns the merged core and custom configuration objects.
@@ -27,6 +17,45 @@ const getConfig = () => {
   const { customConfig } = require("../custom/config");
   return { ...coreConfig, ...customConfig };
 };
+
+/* Generates SQL for PIVOT clause */
+const getSqlPivotEventParams = (event_params)=> {
+   let value = "";
+   value = ` PIVOT ( MIN(param_value) FOR param_name IN (${event_params})  ) `
+return `${value}`;
+}
+/** Generates SQL code that counts instances of events 
+ * specified in KEY_EVENT_ARRAY , to be included as a metric
+ */
+const getSqlSelectEventsAsMetrics = (config) => {
+  return Object.entries(config)
+    .map(([key, value]) => {
+       return `countif(lower(event_name)='${value.toLowerCase()}') AS ${value.toLowerCase()}`;
+    })
+    .join(", ");
+}
+
+/**
+ * Generates array of all event parameter keys in a comma-separated string
+ * for the past year(?), to be used in PIVOT statment 
+ * @returns {string} 
+ */
+const getEventParamKeysArray = (config, tbl, param_array = "event_params") => {
+     let value = "";
+    // value = config.cleaningMethod ? config.cleaningMethod(value) : value;
+
+  if (param_array == 'item_params') {
+        // value = "'alina', 'alina'";
+      value = `SELECT IFNULL(CONCAT("'", STRING_AGG(DISTINCT params.key, "', '" ORDER BY key ), "'"), "''") FROM ${tbl}, UNNEST(items) items, UNNEST(items.item_params)  params
+              WHERE NOT REGEXP_CONTAINS(params.key, "${config.CUSTOM_ITEM_PARAMS_TO_EXCLUDE.join("|")}")`;
+  } else {
+      value = `SELECT IFNULL(CONCAT("'", STRING_AGG(DISTINCT params.key, "', '" ORDER BY key ), "'"), "''") FROM ${tbl}, UNNEST(event_params) params 
+                WHERE NOT REGEXP_CONTAINS(params.key, "${config.CUSTOM_EVENT_PARAMS_TO_EXCLUDE.join("|")}")`; //exclude these as Google moved them to separate columns
+
+  }
+    return `${value}`;
+}
+
 
 /**
  * Generates SQL for the qualify statement in the transactions table
@@ -75,7 +104,13 @@ const generateParamSQL = (config, column = "event_params") => {
  * @param {string} [column='event_params'] - Column name containing the parameters
  * @returns {string} SQL fragment for multiple parameters unnest
  */
+const generateParamsSQL_fake  = (config_array, column = "event_params") => {
+  return 
+      `${config_array}`;
+
+  };
 const generateParamsSQL = (config_array, column = "event_params") => {
+  console.log("alina");
   return `
       ${config_array
         .map((config) => {
@@ -165,7 +200,8 @@ const generateArrayAggSQL = (
   paramName,
   columnName = false,
   orderTypeAsc = true,
-  orderBy = "time.event_timestamp_utc"
+//   orderBy = "time.event_timestamp_utc"
+  orderBy = "event_timestamp"
 ) => {
   const alias =
     columnName === null ? "" : `AS ${columnName ? columnName : paramName} `;
@@ -666,10 +702,14 @@ const helpers = {
   generateClickIdCoalesceSQL,
   generateClickIdCasesSQL,
   generateTransactionsDedupeSQL,
+  getEventParamKeysArray,
   storageLabels,
   executionLabels,
   storageUpdateLabels,
-  generateAlterTableStatements
+  generateAlterTableStatements,
+  getSqlSelectEventsAsMetrics,
+  getSqlPivotEventParams,
+  generateParamSQL
 };
 
 module.exports = {
